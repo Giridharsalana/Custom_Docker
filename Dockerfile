@@ -4,6 +4,7 @@ LABEL maintainer="giridharsalana@gmail.com"
 
 # Update and upgrade
 RUN apt-get update -y && apt-get upgrade -y 
+RUN rm /run/reboot-required*
 
 # Install Base Tools
 RUN apt-get install sudo software-properties-common git wget curl -y
@@ -14,9 +15,12 @@ RUN apt-add-repository ppa:fish-shell/release-3 -y && \
 	apt-get install fish -y 
 
 # Root User Creation
-RUN useradd -rm -d /home/giri -s /usr/bin/fish -g root -G sudo -u 1001 giri
-RUN echo "giri ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/giri
-RUN chmod 044 /etc/sudoers.d/giri
+RUN useradd -m giri -p $(openssl passwd 1234) -s /usr/bin/fish
+RUN usermod -aG sudo giri
+
+# RUN useradd -rm -d /home/giri -s /usr/bin/fish -g root -G sudo -u 1001 giri
+# RUN echo "giri ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/giri
+# RUN chmod 044 /etc/sudoers.d/giri
 USER giri
 ENV USER giri
 ENV HOME /home/$USER
@@ -32,10 +36,10 @@ ENV LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8
 
 # Tools & Langauges Installation
 # Tools
-RUN sudo apt-get install unzip xz-utils zip libglu1-mesa openjdk-8-jdk -y
+#RUN sudo apt-get install unzip xz-utils zip libglu1-mesa openjdk-8-jdk -y
 
 # Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o Rust.sh && chmod +x Rust.sh && ./Rust.sh -y && rm Rust.sh 
+#RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o Rust.sh && chmod +x Rust.sh && ./Rust.sh -y && rm Rust.sh 
 
 # Flutter 
 # Prepare Android directories and system variables
