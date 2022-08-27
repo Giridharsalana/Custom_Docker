@@ -33,7 +33,7 @@ ENV LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8
 
 # Tools & Langauges Installation
 # Tools
-RUN sudo apt-get install unzip xz-utils zip libglu1-mesa openjdk-8-jdk nala -y
+RUN sudo apt-get install unzip xz-utils zip libglu1-mesa openjdk-8-jdk -y
 
 # Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o Rust.sh && chmod +x Rust.sh && ./Rust.sh -y && rm Rust.sh 
