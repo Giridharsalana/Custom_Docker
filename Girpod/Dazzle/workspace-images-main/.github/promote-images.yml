@@ -1,0 +1,34 @@
+# Sync all the iamges that are tagged using date time stamp
+# format +%Y-%m-%d-%H-%M-%S e.g. 2022-02-22-10-10-54.
+# Use simple regex for readability. Since we tag all images with year
+# We use a regex rule: Any tag that starts with '20'.
+"europe-docker.pkg.dev/gitpod-artifacts/docker-dev":
+  images-by-tag-regex:
+    workspace-base: "20.*"
+    workspace-c: "20.*"
+    workspace-clojure: "20.*"
+    workspace-elixir: "20.*"
+    workspace-full: "20.*"
+    workspace-full-vnc: "20.*"
+    workspace-go: "20.*"
+    workspace-nix: "20.*"
+    workspace-node: "20.*"
+    workspace-node-lts: "20.*"
+    workspace-python: "20.*"
+    workspace-python-3.7: "20.*"
+    workspace-python-3.8: "20.*"
+    workspace-python-3.9: "20.*"
+    workspace-python-3.10: "20.*"
+    workspace-ruby-2: "20.*"
+    workspace-ruby-3: "20.*"
+    workspace-ruby-3.0: "20.*"
+    workspace-ruby-3.1: "20.*"
+    workspace-rust: "20.*"
+    workspace-dotnet: "20.*"
+    workspace-postgres: "20.*"
+    workspace-mysql: "20.*"
+    workspace-mongodb: "20.*"
+    workspace-java-11: "20.*"
+    workspace-java-17: "20.*"
+    workspace-yugabytedb: "20.*"
+    workspace-yugabytedb-preview: "20.*"
