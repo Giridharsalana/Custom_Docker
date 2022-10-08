@@ -1,4 +1,0 @@
-root = "/workspace/buildkit"
-
-[worker.oci]
-gckeepstorage = 40000

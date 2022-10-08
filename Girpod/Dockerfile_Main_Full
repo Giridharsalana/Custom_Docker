@@ -4,6 +4,8 @@ LABEL maintainer="giridharsalana@gmail.com"
 
 COPY install-packages upgrade-packages /usr/bin/
 
+USER root
+
 ### base ###
 RUN yes | unminimize \
     && install-packages \
@@ -42,40 +44,68 @@ RUN upgrade-packages
 RUN add-apt-repository -y ppa:git-core/ppa
 RUN install-packages git git-lfs
 
-### giri user ###
+# User
+ENV USER=giri
+
 # '-l': see https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#user
-RUN useradd -l -u 33333 -G sudo -md /home/giri -s /bin/bash -p giri giri \
+RUN useradd -l -u 33333 -G sudo -md /home/$USER -s /bin/bash -p $USER $USER \
     # passwordless sudo for users in the 'sudo' group
     && sed -i.bkp -e 's/%sudo\s\+ALL=(ALL\(:ALL\)\?)\s\+ALL/%sudo ALL=NOPASSWD:ALL/g' /etc/sudoers \
     # To emulate the workspace-session behavior within dazzle build env
-    && mkdir /workspace && chown -hR giri:giri /workspace
+    && mkdir /workspace && chown -hR $USER:$USER /workspace
 
-ENV HOME=/home/giri
-WORKDIR $HOME
 # custom Bash prompt
 RUN { echo && echo "PS1='\[\033[01;32m\]\u\[\033[00m\] \[\033[01;34m\]\w\[\033[00m\]\$(__git_ps1 \" (%s)\") $ '" ; } >> .bashrc
 
 COPY default.gitconfig /etc/gitconfig
-COPY --chown=giri:giri default.gitconfig /home/giri/.gitconfig
+COPY --chown=$USER:$USER default.gitconfig /home/$USER/.gitconfig
 
 # configure git-lfs
 RUN git lfs install --system --skip-repo
 
-### giri user (2) ###
-USER giri
-# use sudo so that user does not get sudo usage info on (the first) login
-RUN sudo echo "Running 'sudo' for giri: success" && \
-    # create .bashrc.d folder and source it in the bashrc
-    mkdir -p /home/giri/.bashrc.d && \
-    (echo; echo "for i in \$(ls -A \$HOME/.bashrc.d/); do source \$HOME/.bashrc.d/\$i; done"; echo) >> /home/giri/.bashrc && \
-    # create a completions dir for giri user
-    mkdir -p /home/giri/.local/share/bash-completion/completions
+# dep-cacert-update setup
+RUN sudo apt-get install -y --only-upgrade ca-certificates
 
-# Custom PATH additions
-ENV PATH=$HOME/.local/bin:/usr/games:$PATH
-
-# Vnc Setup
 USER root
+# Docker Install
+# https://docs.docker.com/engine/install/ubuntu/
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+    $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null \
+    && apt update \
+    && install-packages docker-ce docker-ce-cli containerd.io
+
+RUN curl -o /usr/bin/slirp4netns -fsSL https://github.com/rootless-containers/slirp4netns/releases/download/v1.1.12/slirp4netns-$(uname -m) \
+    && chmod +x /usr/bin/slirp4netns
+
+RUN curl -o /usr/local/bin/docker-compose -fsSL https://github.com/docker/compose/releases/download/v2.4.1/docker-compose-linux-$(uname -m) \
+    && chmod +x /usr/local/bin/docker-compose && mkdir -p /usr/local/lib/docker/cli-plugins && \
+    ln -s /usr/local/bin/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
+
+# https://github.com/wagoodman/dive
+RUN curl -o /tmp/dive.deb -fsSL https://github.com/wagoodman/dive/releases/download/v0.10.0/dive_0.10.0_linux_amd64.deb \
+    && apt install /tmp/dive.deb \
+    && rm /tmp/dive.deb
+
+# Tailscale vpn setup
+RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.gpg | sudo apt-key add - \
+    && curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.list | sudo tee /etc/apt/sources.list.d/tailscale.list \
+    && apt-get update \
+    && apt-get install -y tailscale \
+    && rm /etc/apt/sources.list.d/tailscale.list
+
+# C lang setup
+RUN curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/focal/ \
+    llvm-toolchain-focal-15 main" | sudo tee /etc/apt/sources.list.d/llvm.list > /dev/null \
+    && apt update \
+    && install-packages \
+    clang \
+    clangd \
+    clang-format \
+    clang-tidy \
+    gdb \
+    lld
 
 # Install Desktop-ENV, tools
 RUN install-packages \
@@ -95,13 +125,79 @@ COPY gp-vncsession /usr/bin/
 RUN chmod 0755 "$(which gp-vncsession)" \
     && printf '%s\n' 'export DISPLAY=:0' \
     'test -e "$GITPOD_REPO_ROOT" && gp-vncsession' >> "$HOME/.bashrc" \
-    'test -e "$CODESPACE_VSCODE_FOLDER" && gp-vncsession' >> "$HOME/.bashrc"
+    'test -e "$CODESPACES" && gp-vncsession' >> "$HOME/.bashrc"
 # Add X11 dotfiles
-COPY --chown=giri:giri .xinitrc $HOME/
+# COPY --chown=giri:giri .xinitrc $HOME/
+
+#User Level
+### giri user ###
+USER giri
+ENV USER=giri
+ENV HOME=/home/$USER
+WORKDIR $HOME
+
+# use sudo so that user does not get sudo usage info on (the first) login
+RUN sudo echo "Running 'sudo' for $USER: success" && \
+    # create .bashrc.d folder and source it in the bashrc
+    mkdir -p /home/$USER/.bashrc.d && \
+    (echo; echo "for i in \$(ls -A \$HOME/.bashrc.d/); do source \$HOME/.bashrc.d/\$i; done"; echo) >> /home/$USER/.bashrc && \
+    # create a completions dir for $USER user
+    mkdir -p /home/$USER/.local/share/bash-completion/completions
+
+# Custom PATH additions
+ENV PATH=$HOME/.local/bin:/usr/games:$PATH
+
+# Go lang setup
+ENV GO_VERSION=1.19.2
+ENV TRIGGER_REBUILD=1
+ENV GO_VERSION=${GO_VERSION}
+ENV GOPATH=$HOME/go-packages
+ENV GOROOT=$HOME/go
+ENV PATH=$GOROOT/bin:$GOPATH/bin:$PATH
+RUN curl -fsSL https://dl.google.com/go/go$GO_VERSION.linux-amd64.tar.gz | tar xzs && \
+    # install VS Code Go tools for use with gopls as per https://github.com/golang/vscode-go/blob/master/docs/tools.md
+    # also https://github.com/golang/vscode-go/blob/27bbf42a1523cadb19fad21e0f9d7c316b625684/src/goTools.ts#L139
+    go install -v github.com/uudashr/gopkgs/cmd/gopkgs@v2 && \
+    go install -v github.com/ramya-rao-a/go-outline@latest && \
+    go install -v github.com/cweill/gotests/gotests@latest && \
+    go install -v github.com/fatih/gomodifytags@latest && \
+    go install -v github.com/josharian/impl@latest && \
+    go install -v github.com/haya14busa/goplay/cmd/goplay@latest && \
+    go install -v github.com/go-delve/delve/cmd/dlv@latest && \
+    go install -v github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
+    go install -v golang.org/x/tools/gopls@latest && \
+    sudo rm -rf $GOPATH/src $GOPATH/pkg $HOME/.cache/go $HOME/.cache/go-build && \
+    printf '%s\n' 'export GOPATH=/workspace/go' \
+    'export PATH=$GOPATH/bin:$PATH' > $HOME/.bashrc.d/300-go
+
+# Node lang setup
+ENV NODE_VERSION=18.10.0
+ENV NODE_VERSION=${NODE_VERSION}
+
+RUN curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | PROFILE=/dev/null bash \
+    && bash -c ". .nvm/nvm.sh \
+    && nvm install v${NODE_VERSION} \
+    && nvm alias default v${NODE_VERSION} \
+    && npm install -g typescript yarn pnpm node-gyp" \
+    && echo ". ~/.nvm/nvm-lazy.sh"  >> /home/$USER/.bashrc.d/50-node
+# above, we are adding the lazy nvm init to .bashrc, because one is executed on interactive shells, the other for non-interactive shells (e.g. plugin-host)
+COPY --chown=$USER:$USER nvm-lazy.sh /home/$USER/.nvm/nvm-lazy.sh
+ENV PATH=/home/$USER/.nvm/versions/node/v${NODE_VERSION}/bin:$PATH
+
+# Rust lang setup
+ENV PATH=$HOME/.cargo/bin:$PATH
+
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path --default-toolchain stable \
+    -c rls rust-analysis rust-src rustfmt clippy \
+    && for cmp in rustup cargo; do rustup completions bash "$cmp" > "$HOME/.local/share/bash-completion/completions/$cmp"; done \
+    && printf '%s\n'    'export CARGO_HOME=/workspace/.cargo' \
+    'mkdir -m 0755 -p "$CARGO_HOME/bin" 2>/dev/null' \
+    'export PATH=$CARGO_HOME/bin:$PATH' \
+    'test ! -e "$CARGO_HOME/bin/rustup" && mv "$(command -v rustup)" "$CARGO_HOME/bin"' > $HOME/.bashrc.d/80-rust \
+    && cargo install cargo-watch cargo-edit cargo-workspaces \
+    && rm -rf "$HOME/.cargo/registry" # This registry cache is now useless as we change the CARGO_HOME path to `/workspace`
 
 # My Custom Setup
-USER giri
-ENV USER giri
 # Install custom tools, runtime, etc.
 RUN sudo apt-get update -y && sudo apt-get upgrade -y
 
@@ -116,15 +212,15 @@ RUN sudo apt update && sudo apt install -y curl git unzip xz-utils zip libglu1-m
 
 # Root User Creation
 RUN mkdir -p /home/$USER/.config/fish/
-RUN git clone https://github.com/Giridharsalana/DotFiles.git
+RUN git clone https://github.com/giridharsalana/DotFiles.git
 RUN cp -rf DotFiles/* ~/.
 RUN echo "function c\n    clear\nend" > /home/$USER/.config/fish/config.fish
-ENV SHELL /usr/bin/fish
+ENV SHELL=/usr/bin/fish
 ENV LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8
 
 # Prepare Android directories and system variables
 RUN mkdir -p Android/sdk
-ENV ANDROID_SDK_ROOT /home/$USER/Android/sdk
+ENV ANDROID_SDK_ROOT=/home/$USER/Android/sdk
 RUN mkdir -p .android && touch .android/repositories.cfg
 
 # Set up Android SDK
@@ -134,13 +230,13 @@ RUN mv tools Android/sdk/tools
 RUN cd Android/sdk/tools/bin && yes | ./sdkmanager --licenses
 RUN cd Android/sdk/tools/bin && ./sdkmanager "build-tools;29.0.2" "patcher;v4" "platform-tools" "platforms;android-29" "sources;android-29"
 RUN cd Android/sdk/tools/bin && ./sdkmanager --install "cmdline-tools;latest"
-ENV PATH "$PATH:/home/gitpod/Android/sdk/platform-tools"
+ENV PATH="$PATH:/home/$USER/Android/sdk/platform-tools"
 
 RUN sudo apt update && sudo apt install -y openjdk-11-jdk
 
 # Download Flutter SDK
 RUN git clone https://github.com/flutter/flutter.git
-ENV PATH "$PATH:/home/$USER/flutter/bin"
+ENV PATH="$PATH:/home/$USER/flutter/bin"
 
 # Run basic check to download Dark SDK
 RUN flutter doctor
@@ -149,4 +245,3 @@ RUN flutter upgrade
 
 # Fish Shell
 ENTRYPOINT [ "fish" ]
-

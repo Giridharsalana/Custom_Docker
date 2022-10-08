@@ -1,0 +1,152 @@
+FROM buildpack-deps:jammy
+
+LABEL maintainer="giridharsalana@gmail.com"
+
+COPY install-packages upgrade-packages /usr/bin/
+
+### base ###
+RUN yes | unminimize \
+    && install-packages \
+    zip \
+    unzip \
+    bash-completion \
+    build-essential \
+    ninja-build \
+    htop \
+    iputils-ping \
+    jq \
+    less \
+    locales \
+    man-db \
+    nano \
+    ripgrep \
+    software-properties-common \
+    sudo \
+    stow \
+    time \
+    emacs-nox \
+    vim \
+    multitail \
+    lsof \
+    ssl-cert \
+    fish \
+    zsh \
+    && locale-gen en_US.UTF-8
+
+ENV LANG=en_US.UTF-8
+
+### Update and upgrade the base image ###
+RUN upgrade-packages
+
+### Git ###
+RUN add-apt-repository -y ppa:git-core/ppa
+RUN install-packages git git-lfs
+
+### giri user ###
+# '-l': see https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#user
+RUN useradd -l -u 33333 -G sudo -md /home/giri -s /bin/bash -p giri giri \
+    # passwordless sudo for users in the 'sudo' group
+    && sed -i.bkp -e 's/%sudo\s\+ALL=(ALL\(:ALL\)\?)\s\+ALL/%sudo ALL=NOPASSWD:ALL/g' /etc/sudoers \
+    # To emulate the workspace-session behavior within dazzle build env
+    && mkdir /workspace && chown -hR giri:giri /workspace
+
+ENV HOME=/home/giri
+WORKDIR $HOME
+# custom Bash prompt
+RUN { echo && echo "PS1='\[\033[01;32m\]\u\[\033[00m\] \[\033[01;34m\]\w\[\033[00m\]\$(__git_ps1 \" (%s)\") $ '" ; } >> .bashrc
+
+COPY default.gitconfig /etc/gitconfig
+COPY --chown=giri:giri default.gitconfig /home/giri/.gitconfig
+
+# configure git-lfs
+RUN git lfs install --system --skip-repo
+
+### giri user (2) ###
+USER giri
+# use sudo so that user does not get sudo usage info on (the first) login
+RUN sudo echo "Running 'sudo' for giri: success" && \
+    # create .bashrc.d folder and source it in the bashrc
+    mkdir -p /home/giri/.bashrc.d && \
+    (echo; echo "for i in \$(ls -A \$HOME/.bashrc.d/); do source \$HOME/.bashrc.d/\$i; done"; echo) >> /home/giri/.bashrc && \
+    # create a completions dir for giri user
+    mkdir -p /home/giri/.local/share/bash-completion/completions
+
+# Custom PATH additions
+ENV PATH=$HOME/.local/bin:/usr/games:$PATH
+
+# Vnc Setup
+USER root
+
+# Install Desktop-ENV, tools
+RUN install-packages \
+    tigervnc-standalone-server tigervnc-xorg-extension \
+    dbus dbus-x11 gnome-keyring xfce4 xfce4-terminal \
+    xdg-utils x11-xserver-utils pip
+
+# Install novnc and numpy module for it
+RUN git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc \
+    && git clone --depth 1 https://github.com/novnc/websockify /opt/novnc/utils/websockify \
+    && find /opt/novnc -type d -name '.git' -exec rm -rf '{}' + \
+    && sudo -H pip3 install numpy
+COPY novnc-index.html /opt/novnc/index.html
+
+# Add VNC startup script
+COPY gp-vncsession /usr/bin/
+RUN chmod 0755 "$(which gp-vncsession)" \
+    && printf '%s\n' 'export DISPLAY=:0' \
+    'test -e "$GITPOD_REPO_ROOT" && gp-vncsession' >> "$HOME/.bashrc" \
+    'test -e "$CODESPACE_VSCODE_FOLDER" && gp-vncsession' >> "$HOME/.bashrc"
+# Add X11 dotfiles
+COPY --chown=giri:giri .xinitrc $HOME/
+
+# My Custom Setup
+USER giri
+ENV USER giri
+# Install custom tools, runtime, etc.
+RUN sudo apt-get update -y && sudo apt-get upgrade -y
+
+# Install fish shell
+RUN sudo apt-add-repository ppa:fish-shell/release-3 -y && \
+    sudo apt update -y && \
+    sudo apt install fish -y 
+
+# Flutter Setup
+# Prerequisites
+RUN sudo apt update && sudo apt install -y curl git unzip xz-utils zip libglu1-mesa wget openjdk-8-jdk
+
+# Root User Creation
+RUN mkdir -p /home/$USER/.config/fish/
+RUN git clone https://github.com/Giridharsalana/DotFiles.git
+RUN cp -rf DotFiles/* ~/.
+RUN echo "function c\n    clear\nend" > /home/$USER/.config/fish/config.fish
+ENV SHELL /usr/bin/fish
+ENV LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8
+
+# Prepare Android directories and system variables
+RUN mkdir -p Android/sdk
+ENV ANDROID_SDK_ROOT /home/$USER/Android/sdk
+RUN mkdir -p .android && touch .android/repositories.cfg
+
+# Set up Android SDK
+RUN wget -O sdk-tools.zip https://dl.google.com/android/repository/sdk-tools-linux-4333796.zip
+RUN unzip sdk-tools.zip && rm sdk-tools.zip
+RUN mv tools Android/sdk/tools
+RUN cd Android/sdk/tools/bin && yes | ./sdkmanager --licenses
+RUN cd Android/sdk/tools/bin && ./sdkmanager "build-tools;29.0.2" "patcher;v4" "platform-tools" "platforms;android-29" "sources;android-29"
+RUN cd Android/sdk/tools/bin && ./sdkmanager --install "cmdline-tools;latest"
+ENV PATH "$PATH:/home/gitpod/Android/sdk/platform-tools"
+
+RUN sudo apt update && sudo apt install -y openjdk-11-jdk
+
+# Download Flutter SDK
+RUN git clone https://github.com/flutter/flutter.git
+ENV PATH "$PATH:/home/$USER/flutter/bin"
+
+# Run basic check to download Dark SDK
+RUN flutter doctor
+RUN flutter channel stable
+RUN flutter upgrade
+
+# Fish Shell
+ENTRYPOINT [ "fish" ]
+
