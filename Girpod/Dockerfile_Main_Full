@@ -74,15 +74,6 @@ RUN sudo echo "Running 'sudo' for giri: success" && \
 # Custom PATH additions
 ENV PATH=$HOME/.local/bin:/usr/games:$PATH
 
-RUN mkdir ~/.cache && /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-ENV PATH=/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin/:$PATH
-ENV MANPATH="$MANPATH:/home/linuxbrew/.linuxbrew/share/man"
-ENV INFOPATH="$INFOPATH:/home/linuxbrew/.linuxbrew/share/info"
-ENV HOMEBREW_NO_AUTO_UPDATE=1
-
-RUN sudo apt remove -y cmake \
-    && brew install cmake
-
 # Vnc Setup
 USER root
 
@@ -103,13 +94,14 @@ COPY novnc-index.html /opt/novnc/index.html
 COPY gp-vncsession /usr/bin/
 RUN chmod 0755 "$(which gp-vncsession)" \
     && printf '%s\n' 'export DISPLAY=:0' \
-    'test -e "$GITPOD_REPO_ROOT" && gp-vncsession' >> "$HOME/.bashrc"
+    'test -e "$GITPOD_REPO_ROOT" && gp-vncsession' >> "$HOME/.bashrc" \
+    'test -e "$CODESPACE_VSCODE_FOLDER" && gp-vncsession' >> "$HOME/.bashrc"
 # Add X11 dotfiles
 COPY --chown=giri:giri .xinitrc $HOME/
 
 # My Custom Setup
 USER giri
-
+ENV USER giri
 # Install custom tools, runtime, etc.
 RUN sudo apt-get update -y && sudo apt-get upgrade -y
 
